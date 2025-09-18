@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <title>本機 bcrypt 雜湊產生器（Local）</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: -apple-system,"Segoe UI",Roboto,"Noto Sans TC","微軟正黑體",sans-serif; max-width:720px; margin:40px auto; padding:0 16px; color:#222; }
+    label { display:block; margin-top:12px; font-weight:600; }
+    input[type="password"], select { width:100%; padding:8px; margin-top:6px; box-sizing:border-box; font-size:14px; }
+    button { margin-top:12px; padding:8px 12px; font-size:14px; }
+    .note { margin-top:10px; color:#666; font-size:13px; }
+    pre { background:#f6f6f6; padding:10px; white-space:pre-wrap; word-break:break-all; min-height:60px; }
+  </style>
+
+  <!-- 主要 CDN：unpkg -->
+  <script src="https://unpkg.com/bcryptjs@2.4.3/dist/bcrypt.min.js"
+          onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/bcryptjs@2.4.3/dist/bcrypt.min.js';document.head.appendChild(s);">
+  </script>
+</head>
+<body>
+  <h1>本機 bcrypt 雜湊產生器（Local）</h1>
+
+  <label for="pwd">要雜湊的密碼（Password）</label>
+  <input id="pwd" type="password" placeholder="輸入密碼（不會送出）" autocomplete="new-password" />
+
+  <label for="rounds">Salt rounds（cost，預設 10）</label>
+  <select id="rounds">
+    <option value="8">8</option>
+    <option value="10" selected>10（常見）</option>
+    <option value="12">12（較安全但較慢）</option>
+    <option value="14">14（非常慢）</option>
+  </select>
+
+  <label><input id="show" type="checkbox" /> 顯示輸入密碼文字（Show password）</label>
+
+  <div>
+    <button id="gen">產生 bcrypt</button>
+    <button id="clear">清除</button>
+  </div>
+
+  <div class="note">
+    說明：此頁在你的瀏覽器本機執行，不會把密碼傳到網路（除非你把結果貼到其他網站）。<br>
+    bcrypt 有 72 bytes 的輸入限制；若你使用中文/Emoji，請留意位元組長度。
+  </div>
+
+  <label for="out">雜湊結果（Hash）</label>
+  <pre id="out"></pre>
+  <button id="copy">複製雜湊</button>
+
+<script>
+(function(){
+  const pwd = document.getElementById('pwd');
+  const rounds = document.getElementById('rounds');
+  const gen = document.getElementById('gen');
+  const out = document.getElementById('out');
+  const copyBtn = document.getElementById('copy');
+  const clearBtn = document.getElementById('clear');
+  const show = document.getElementById('show');
+
+  show.addEventListener('change', () => {
+    pwd.type = show.checked ? 'text' : 'password';
+  });
+
+  function getBcrypt() {
+    // bcryptjs 在瀏覽器下常掛在 dcodeIO.bcrypt
+    return window.bcrypt || (window.dcodeIO && window.dcodeIO.bcrypt) || null;
+  }
+
+  function utf8len(s) {
+    return new TextEncoder().encode(s).length;
+  }
+
+  gen.addEventListener('click', () => {
+    const B = getBcrypt();
+    if (!B) {
+      out.textContent = '錯誤：無法載入 bcryptjs（可能離線或被擋）。\n' +
+                        '請檢查網路或改用本機檔案載入（見頁尾說明）。';
+      return;
+    }
+
+    const raw = pwd.value || '';
+    const r = parseInt(rounds.value, 10);
+
+    if (!raw) {
+      alert('請輸入要雜湊的密碼。');
+      return;
+    }
+
+    const bytes = utf8len(raw);
+    if (bytes > 72 && !confirm(`密碼 UTF-8 長度為 ${bytes} bytes，超過 bcrypt 的 72 bytes 上限。超出的部分會被忽略，確定要繼續嗎？`)) {
+      return;
+    }
+
+    out.textContent = '產生中...（依 rounds 可能需一點時間）';
+
+    // 使用同步 API，前先用 setTimeout 讓 UI 有機會更新
+    setTimeout(() => {
+      try {
+        const salt = B.genSaltSync(r);
+        const hash = B.hashSync(raw, salt);
+        out.textContent = '{bcrypt}' + hash; // 方便直接貼回 Spring Security
+      } catch (e) {
+        out.textContent = '錯誤：' + (e && e.message ? e.message : String(e));
+      }
+    }, 50);
+  });
+
+  copyBtn.addEventListener('click', () => {
+    const text = out.textContent.trim();
+    if (!text) { alert('沒有雜湊可複製'); return; }
+    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject())
+      .then(() => alert('已複製'))
+      .catch(() => {
+        // 允許 file:// 環境下可能無權限
+        try {
+          const sel = window.getSelection();
+          const range = document.createRange();
+          range.selectNodeContents(out);
+          sel.removeAllRanges(); sel.addRange(range);
+          document.execCommand('copy');
+          sel.removeAllRanges();
+          alert('已複製');
+        } catch { alert('複製失敗，請手動選取複製'); }
+      });
+  });
+
+  clearBtn.addEventListener('click', () => {
+    pwd.value = '';
+    out.textContent = '';
+  });
+})();
+</script>
+
+<!-- 離線使用說明：
+1) 安裝一次：  npm init -y && npm i bcryptjs
+2) 複製檔案：  node_modules/bcryptjs/dist/bcrypt.min.js  放到此 index.html 同資料夾
+3) 把上方 CDN <script> 改成： <script src="./bcrypt.min.js"></script>
+4) 之後離線也能用。
+-->
+</body>
+</html>
+
